@@ -1,0 +1,81 @@
+services:
+  db:
+    platform: linux/amd64 # 🔥 Mac Fix
+    image: timescale/timescaledb:latest-pg16
+    container_name: postgres_db
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASS}
+      POSTGRES_DB: ${DB_NAME}
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      retries: 5
+    volumes: [pgdata:/var/lib/postgresql/data]
+    networks: [exness-network]
+
+  redis:
+    platform: linux/amd64 # 🔥 Mac Fix
+    image: redis:7-alpine
+    container_name: redis_service
+    restart: unless-stopped
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      retries: 5
+    volumes: [redis-cache:/data]
+    networks: [exness-network]
+
+  backend:
+    platform: linux/amd64 # 🔥 Mac Fix
+    container_name: backend
+    build: { context: ./server }
+    restart: unless-stopped
+    env_file: [.env]
+    ports: ["5000:5000"]
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    networks: [exness-network]
+
+  poller:
+    platform: linux/amd64 # 🔥 Mac Fix
+    container_name: poller
+    build: { context: ./price_pulse }
+    restart: unless-stopped
+    env_file: [.env]
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    networks: [exness-network]
+
+  ws:
+    platform: linux/amd64 # 🔥 Mac Fix
+    container_name: ws
+    build: { context: ./websocket }
+    restart: unless-stopped
+    env_file: [.env]
+    ports: ["8080:8080"]
+    depends_on:
+      redis: { condition: service_healthy }
+    networks: [exness-network]
+
+  web:
+    platform: linux/amd64 # 🔥 Mac Fix
+    container_name: web
+    build: { context: ./frontend }
+    restart: unless-stopped
+    ports: ["3000:3000"]
+    depends_on: [backend, ws]
+    networks: [exness-network]
+
+networks:
+  exness-network: { driver: bridge }
+
+volumes:
+  redis-cache:
+  pgdata:

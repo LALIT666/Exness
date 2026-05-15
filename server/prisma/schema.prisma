@@ -1,0 +1,168 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-arm64-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+//////////////////////////////////////////////////////
+// USER MODEL
+//////////////////////////////////////////////////////
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  passwordHash  String
+
+  // Money (stored in cents)
+  balanceUsd    Int      @default(100000) // $1000.00
+  marginUsed    Int      @default(0)
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  orders        Order[]
+  transactions  Transaction[]
+  positions     Position[]
+
+  @@map("users")
+}
+
+//////////////////////////////////////////////////////
+// ORDER MODEL (Open + Closed in same table)
+//////////////////////////////////////////////////////
+
+model Order {
+  id                String @id @default(uuid())
+
+  userId            String
+  user              User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type              OrderType
+  asset             Asset
+
+  // Trade config
+  margin            Int        // cents
+  leverage          Int
+
+  // Prices (scaled integer)
+  openPrice         Int
+  liquidationPrice  Int?
+  takeProfit        Int?
+  stopLoss          Int?
+
+  // Order state
+  status            OrderStatus @default(OPEN)
+
+  // Closing info
+  closePrice        Int?
+  pnl               Int?
+  closeReason       CloseReason?
+  closedAt          DateTime?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([userId])
+  @@index([asset])
+  @@index([status])
+}
+
+//////////////////////////////////////////////////////
+// POSITION MODEL (1 per asset per user)
+//////////////////////////////////////////////////////
+
+model Position {
+  id        String @id @default(uuid())
+
+  userId    String
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  asset     Asset
+
+  size      Int      // position size
+  avgPrice  Int      // average entry price
+
+  @@unique([userId, asset])
+}
+
+//////////////////////////////////////////////////////
+// TRANSACTION MODEL (Money ledger)
+//////////////////////////////////////////////////////
+
+model Transaction {
+  id        String @id @default(uuid())
+
+  userId    String
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type      TransactionType
+  amount    Int      // cents
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+//////////////////////////////////////////////////////
+// CANDLES MODEL
+//////////////////////////////////////////////////////
+
+model Candle {
+  id        String   @id @default(uuid())
+
+  symbol    String
+  interval  String   // "1m", "1d", "1w"
+
+  bucket    DateTime
+
+  open      Int
+  high      Int
+  low       Int
+  close     Int
+
+  @@index([symbol])
+  @@index([interval])
+  @@index([bucket])
+}
+
+//////////////////////////////////////////////////////
+// ENUMS
+//////////////////////////////////////////////////////
+
+enum OrderType {
+  BUY
+  SELL
+}
+
+enum OrderStatus {
+  OPEN
+  CLOSED
+  LIQUIDATED
+}
+
+enum Asset {
+  BTC
+  ETH
+  SOL
+}
+
+enum CloseReason {
+  MANUAL
+  TAKE_PROFIT
+  STOP_LOSS
+  LIQUIDATION
+}
+
+enum TransactionType {
+  DEPOSIT
+  WITHDRAW
+  TRADE_PNL
+  FEE
+}
+
+
